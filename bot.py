@@ -2,6 +2,7 @@ import pandas as pd
 import json
 import os
 from datetime import datetime
+import pytz
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, ConversationHandler
 
@@ -111,13 +112,13 @@ PILIH_KELAS, PILIH_PELAJAR, PILIH_SEBAB = range(3)
 def simpan_data():
 
     data = {
-        "tarikh": datetime.now().strftime("%Y-%m-%d"),
+        "tarikh": masa_malaysia().strftime("%Y-%m-%d"),
         "kelas_selesai": list(kelas_selesai),
         "tidak_hadir": tidak_hadir
     }
 
-    with open(DATA_FILE,"w") as f:
-        json.dump(data,f)
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f)
 
 def simpan_rekod_harian():
 
@@ -193,7 +194,7 @@ def load_data():
             data = json.load(f)
 
             tarikh_simpan = data.get("tarikh")
-            tarikh_hari_ini = datetime.now().strftime("%Y-%m-%d")
+            tarikh_hari_ini = masa_malaysia().strftime("%Y-%m-%d")
 
             if tarikh_simpan == tarikh_hari_ini:
 
@@ -209,23 +210,31 @@ def load_data():
 # TARIKH
 # -----------------------------
 
+def masa_malaysia():
+
+    tz = pytz.timezone("Asia/Kuala_Lumpur")
+
+    return datetime.now(tz)
+
 def hari_tarikh():
 
-    hari_en = datetime.now().strftime("%A")
+    now = masa_malaysia()
+
+    hari_en = now.strftime("%A")
 
     hari_melayu = {
-        "Monday":"Isnin",
-        "Tuesday":"Selasa",
-        "Wednesday":"Rabu",
-        "Thursday":"Khamis",
-        "Friday":"Jumaat",
-        "Saturday":"Sabtu",
-        "Sunday":"Ahad"
+        "Monday": "Isnin",
+        "Tuesday": "Selasa",
+        "Wednesday": "Rabu",
+        "Thursday": "Khamis",
+        "Friday": "Jumaat",
+        "Saturday": "Sabtu",
+        "Sunday": "Ahad"
     }
 
-    hari = hari_melayu.get(hari_en,hari_en)
+    hari = hari_melayu.get(hari_en, hari_en)
 
-    tarikh = datetime.now().strftime("%d-%m-%Y")
+    tarikh = now.strftime("%d-%m-%Y")
 
     return hari, tarikh
 
@@ -430,15 +439,11 @@ async def pilih_sebab(update:Update,context:ContextTypes.DEFAULT_TYPE):
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if update.message.from_user.id not in ADMIN_IDS:
+    hari, tarikh = hari_tarikh()
 
-        await update.message.reply_text(
-            "Command ini hanya untuk admin."
-        )
-
-        return
-
-    teks = "STATUS KEHADIRAN KELAS\n\n"
+    teks = "STATUS KEHADIRAN KELAS\n"
+    teks += f"TARIKH: {tarikh}\n"
+    teks += f"HARI: {hari}\n\n"
 
     for k in kelas_list:
 
