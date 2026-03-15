@@ -3,8 +3,13 @@ import json
 import os
 from datetime import datetime
 import pytz
+
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, ConversationHandler
+
+from openpyxl import load_workbook
+import shutil
+from openpyxl.styles import PatternFill
 
 TOKEN = "8668806663:AAGxThCG0tfr5DY_Pw-E1gMjNQSgePLydfY"
 
@@ -237,6 +242,26 @@ def hari_tarikh():
     tarikh = now.strftime("%d-%m-%Y")
 
     return hari, tarikh
+
+# -----------------------------
+# CARI COLUMN TARIKH DALAM EXCEL
+# -----------------------------
+
+def cari_column_tarikh(sheet, tarikh):
+
+    tarikh = str(tarikh)
+
+    for col in range(1, sheet.max_column + 1):
+
+        cell = sheet.cell(row=4, column=col).value
+
+        if cell is None:
+            continue
+
+        if tarikh in str(cell):
+            return col
+
+    return None
 
 # -----------------------------
 # START
@@ -636,69 +661,31 @@ async def laporan_kelas(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(teks)
 
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-from openpyxl.drawing.image import Image
-from openpyxl import load_workbook
-
-async def excel_kehadiran(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    print("VERSI EXCEL STABIL")
+async def excel_harian(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.message.from_user.id not in ADMIN_IDS:
         await update.message.reply_text("Command ini hanya untuk admin.")
         return
 
-    if len(kelas_selesai) < len(kelas_list):
-        await update.message.reply_text(
-            "Masih ada kelas belum isi kehadiran.\nGunakan /status untuk semak."
-        )
-        return
-
     hari, tarikh = hari_tarikh()
 
-    # mapping kod kelas
-    kod_kelas_excel = {
+    fail = "data_kehadiran.xlsx"
 
-        "1K":"1K","1A":"1A","1M":"1M",
-        "2K":"2K","2A":"2A","2M":"2M",
-        "3K":"3K","3A":"3A","3M":"3M",
-        "4K":"4K","4A":"4A","4M":"4M",
-        "5K":"5K","5A":"5A","5M":"5M",
+    if not os.path.exists(fail):
+        shutil.copy("template_kehadiran.xlsx", fail)
 
-        "STAMLULU'":"LULU'",
-        "STAMMARJAN":"MARJAN"
-    }
+    wb = load_workbook(fail)
 
-    # nama kelas penuh
-    nama_kelas_excel = {
+    sheet = wb["PERATUS HARIANMINGGUAN"]
 
-        "1K":"1KHADIJAH","1A":"1AISYAH","1M":"1MAIMUNAH",
-        "2K":"2KHADIJAH","2A":"2AISYAH","2M":"2MAIMUNAH",
-        "3K":"3KHADIJAH","3A":"3AISYAH","3M":"3MAIMUNAH",
-        "4K":"4KHADIJAH","4A":"4AISYAH","4M":"4MAIMUNAH",
-        "5K":"5KHADIJAH","5A":"5AISYAH","5M":"5MAIMUNAH",
+    column = cari_column_tarikh(sheet, tarikh)
 
-        "STAMLULU'":"STAMLULU'",
-        "STAMMARJAN":"STAMMARJAN"
-    }
+    if column is None:
 
-    wb = load_workbook("template_kehadiran.xlsx")
-    sheet = wb.active
+        await update.message.reply_text("Tarikh tidak dijumpai dalam template Excel.")
+        return
 
-    # isi hari dan tarikh
-    sheet["B4"] = hari.upper()
-    sheet["B5"] = tarikh
-
-    # tambah logo
-    logo = Image("logo_mklb.png")
-    logo.width = 90
-    logo.height = 90
-    sheet.add_image(logo, "C1")
-
-    row = 8
-
-    jumlah_sekolah = 0
-    hadir_sekolah = 0
+    row = 19
 
     for kelas in kelas_list:
 
@@ -707,40 +694,52 @@ async def excel_kehadiran(update: Update, context: ContextTypes.DEFAULT_TYPE):
         hadir = jumlah - tidak
 
         if jumlah > 0:
-            peratus = (hadir / jumlah) * 100
+            peratus = round((hadir / jumlah) * 100, 2)
         else:
             peratus = 0
 
-        sheet[f"A{row}"] = row-7
-        sheet[f"B{row}"] = nama_kelas_excel.get(kelas, kelas)
-        sheet[f"C{row}"] = jumlah
-        sheet[f"D{row}"] = hadir
-        sheet[f"E{row}"] = tidak
-        sheet[f"F{row}"] = round(peratus,2)
-
-        jumlah_sekolah += jumlah
-        hadir_sekolah += hadir
+        sheet.cell(row=row, column=column).value = peratus
 
         row += 1
 
-    # statistik sekolah
-    tidak_sekolah = jumlah_sekolah - hadir_sekolah
 
-    if jumlah_sekolah > 0:
-        peratus_sekolah = (hadir_sekolah / jumlah_sekolah) * 100
-    else:
-        peratus_sekolah = 0
+# -----------------------------
+# WARNA MERAH JIKA TIADA DATA
+# -----------------------------
 
-    sheet["B30"] = jumlah_sekolah
-    sheet["B31"] = hadir_sekolah
-    sheet["B32"] = tidak_sekolah
-    sheet["B33"] = f"{peratus_sekolah:.2f}%"
+    from openpyxl.styles import PatternFill
 
-    file_name = f"LAPORAN_KEHADIRAN_{tarikh}.xlsx"
+    merah = PatternFill(start_color="FF9999", end_color="FF9999", fill_type="solid")
 
-    wb.save(file_name)
+    for col in range(2, sheet.max_column + 1):
 
-    await update.message.reply_document(document=open(file_name, "rb"))
+        cell = sheet.cell(row=19, column=col)
+
+        if cell.value is None:
+
+            for r in range(19, 19 + len(kelas_list)):
+
+                sheet.cell(row=r, column=col).fill = merah
+
+
+    wb.save(fail)
+    wb.close()
+
+    await update.message.reply_document(document=open(fail, "rb"))
+
+async def excel_mingguan(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if update.message.from_user.id not in ADMIN_IDS:
+        return
+
+    fail = "data_kehadiran.xlsx"
+
+    if not os.path.exists(fail):
+
+        await update.message.reply_text("Tiada rekod Excel.")
+        return
+
+    await update.message.reply_document(document=open(fail,"rb"))
 
 # -----------------------------
 # RESET SEMUA KEHADIRAN (ADMIN)
@@ -761,63 +760,6 @@ async def reset_semua(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "SEMUA KEHADIRAN HARI INI TELAH DIRESET.\nGuru boleh isi semula kehadiran."
     )
-
-async def excel_tidak_hadir(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if update.message.from_user.id not in ADMIN_IDS:
-        await update.message.reply_text("Command ini hanya untuk admin.")
-        return
-
-    hari, tarikh = hari_tarikh()
-
-    data = []
-
-    for kelas in kelas_list:
-
-        senarai = tidak_hadir.get(kelas, [])
-
-        for pelajar in senarai:
-
-            nama = pelajar["nama"]
-            sebab = pelajar["sebab"]
-
-            data.append({
-                "Tarikh": tarikh,
-                "Kelas": kelas,
-                "Nama Pelajar": nama,
-                "Sebab Tidak Hadir": sebab
-            })
-
-    if len(data) == 0:
-        await update.message.reply_text("Tiada pelajar tidak hadir hari ini.")
-        return
-
-    df = pd.DataFrame(data)
-
-    file_name = f"SENARAI_TIDAK_HADIR_{tarikh}.xlsx"
-
-    with pd.ExcelWriter(file_name, engine="openpyxl") as writer:
-
-        df.to_excel(writer, index=False)
-
-        sheet = writer.sheets["Sheet1"]
-
-        # header style
-        from openpyxl.styles import Font, Alignment, PatternFill
-
-        header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
-
-        for cell in sheet[1]:
-            cell.font = Font(bold=True, color="FFFFFF")
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal="center")
-
-        sheet.column_dimensions["A"].width = 15
-        sheet.column_dimensions["B"].width = 10
-        sheet.column_dimensions["C"].width = 35
-        sheet.column_dimensions["D"].width = 25
-
-    await update.message.reply_document(document=open(file_name,"rb"))
 
 async def laporan_mingguan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -966,8 +908,8 @@ app.add_handler(CommandHandler("laporansemasa", laporan_semasa))
 app.add_handler(CommandHandler("laporanpenuh", laporan_penuh))
 app.add_handler(CommandHandler("laporankelas", laporan_kelas))
 
-app.add_handler(CommandHandler("excel", excel_kehadiran))
-app.add_handler(CommandHandler("exceltakhadir", excel_tidak_hadir))
+app.add_handler(CommandHandler("excelharian", excel_harian))
+app.add_handler(CommandHandler("excelmingguan", excel_mingguan))
 
 app.add_handler(CommandHandler("laporanmingguan", laporan_mingguan))
 app.add_handler(CommandHandler("laporanbulanan", laporan_bulanan))
@@ -1001,30 +943,4 @@ load_data()
 
 print("Bot sedang berjalan...")
 
-import time
-
-while True:
-
-    try:
-
-        print("Bot sedang berjalan...")
-
-        app.run_polling(close_loop=False)
-
-    except KeyboardInterrupt:
-
-        print("Bot dihentikan manual.")
-        break
-
-    except Exception as e:
-
-        print("Bot crash:", e)
-
-        try:
-            app.stop()
-        except:
-            pass
-
-        time.sleep(5)
-
-        print("Restart bot...")
+app.run_polling()
