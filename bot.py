@@ -431,11 +431,24 @@ async def pilih_sebab(update:Update,context:ContextTypes.DEFAULT_TYPE):
     if teks == "KEMBALI":
         return PILIH_PELAJAR
 
-    tidak_hadir.setdefault(kelas,[])
-    tidak_hadir[kelas].append({
-        "nama": pelajar,
-        "sebab": teks
-    })
+    tidak_hadir.setdefault(kelas, [])
+
+    # semak jika pelajar sudah direkod
+    sudah_ada = False
+
+    for p in tidak_hadir[kelas]:
+
+        if p["nama"] == pelajar:
+
+            sudah_ada = True
+            break
+
+    if not sudah_ada:
+
+        tidak_hadir[kelas].append({
+            "nama": pelajar,
+            "sebab": teks
+        })
 
     simpan_data()
 
